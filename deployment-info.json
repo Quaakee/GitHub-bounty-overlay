@@ -1,0 +1,32 @@
+{
+    "schema": "bsv-app",
+    "schemaVersion": "1.0",
+    "topicManagers": {
+      "tm_bounty": "./backend/src/topic-managers/BountyTopicManager.ts"
+    },
+    "lookupServices": {
+      "ls_bounty": {
+        "serviceFactory": "./backend/src/lookup-services/BountyLookupServiceFactory.ts",
+        "hydrateWith": "mongo"
+      }
+    },
+    "frontend": {
+      "language": "react",
+      "sourceDirectory": "./frontend"
+    },
+    "contracts": {
+      "language": "sCrypt",
+      "baseDirectory": "./backend"
+    },
+    "configs": [
+      {
+        "name": "Local LARS",
+        "network": "testnet",
+        "provider": "LARS",
+        "run": [
+          "backend",
+          "frontend"
+        ]
+      }
+    ]
+  }
