@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PrivateKey, WalletClient, LookupResolver, Transaction, AuthFetch } from '@bsv/sdk';
+import { Bounty } from './types';
+import { UserData } from './types';
 
 // Main App Component
 const App = () => {
@@ -10,8 +12,9 @@ const App = () => {
   
   // User state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userData, setUserData] = useState(null);
+  const [userData, setUserData] = useState<UserData | null>(null);
   const [serverInfo, setServerInfo] = useState({ publicKey: '' });
+  const [gitCertInfo, setGitCertInfo] = useState({ publicKey: '' });
   
   // Form states
   const [issueId, setIssueId] = useState('');
@@ -20,11 +23,11 @@ const App = () => {
   const [repoOwner, setRepoOwner] = useState('');
   
   // Bounties state
-  const [bounties, setBounties] = useState([]);
+  const [bounties, setBounties] = useState<Bounty[]>([]);
   
   // SDK state
   const [walletClient, setWalletClient] = useState(null);
-  const [authFetch, setAuthFetch] = useState(null);
+  const [authFetch, setAuthFetch] = useState<AuthFetch | null>(null);
   
   // Server URL (default from localStorage or use default)
   const defaultServerUrl = 'http://localhost:8080';
@@ -35,12 +38,11 @@ const App = () => {
   // Initialize the BSV SDK wallet client and AuthFetch
   useEffect(() => {
     try {
-      const client = new WalletClient('json-api');
-      setWalletClient(client);
+      const wallet = new WalletClient('json-api', 'localhost');
       
       // Initialize AuthFetch with the wallet client
-      const fetch = new AuthFetch(client);
-      setAuthFetch(fetch);
+      const client = new AuthFetch(wallet);
+      setAuthFetch(client);
       
       console.log('BSV SDK WalletClient and AuthFetch initialized');
     } catch (error) {
@@ -55,14 +57,20 @@ const App = () => {
   
   // Fetch server info on mount and when URL changes
   useEffect(() => {
+    // Fetch server info
     async function fetchServerInfo() {
       try {
         const response = await fetch(`${serverUrl}/api/server-info`);
         if (response.ok) {
           const data = await response.json();
           setServerInfo(data);
-        } else {
-          console.error('Failed to get server info');
+        }
+        
+        // Also fetch the GitCert server's public key
+        const gitcertResponse = await fetch(`${process.env.GITCERT_SERVER_URL || 'http://localhost:3002'}/api/server-info`);
+        if (gitcertResponse.ok) {
+          const gitcertData = await gitcertResponse.json();
+          setGitCertInfo(gitcertData);
         }
       } catch (error) {
         console.error('Error fetching server info:', error);
@@ -80,7 +88,7 @@ const App = () => {
           credentials: 'include' // Include cookies for session
         });
         
-        const data = await response.json();
+        const data = await response.json() as UserData;
         
         if (response.ok && data.authenticated) {
           setIsAuthenticated(true);
@@ -101,7 +109,7 @@ const App = () => {
   
   // Function to handle GitHub login
   const handleGitHubLogin = () => {
-    window.location.href = `${serverUrl}/auth/github`;
+    window.location.href = `http://localhost:5173/auth/github`;
   };
   
   // Function to handle logout
@@ -111,53 +119,11 @@ const App = () => {
   
   // Function to get GitHub certificate
   const handleGetCertificate = async () => {
-    setIsLoading(true);
-    setErrorMessage('');
-    setSuccessMessage('');
-    
-    try {
-      if (!walletClient) {
-        throw new Error('Wallet client not initialized');
-      }
-      
-      // Get auth token
-      const tokenResponse = await fetch(`${serverUrl}/api/auth-token`, {
-        credentials: 'include'
-      });
-      
-      if (!tokenResponse.ok) {
-        throw new Error('Failed to get authentication token');
-      }
-      
-      const { token } = await tokenResponse.json();
-      
-      if (!serverInfo.publicKey) {
-        throw new Error('Server public key not available');
-      }
-      
-      const result = await walletClient.acquireCertificate({
-        certifier: serverInfo.publicKey,
-        certifierUrl: serverUrl,
-        type: 'Z2l0aHViLWlkZW50aXR5', // This is 'github-identity' in base64
-        acquisitionProtocol: 'issuance',
-        fields: {
-          githubUsername: userData.username,
-          githubEmail: userData.email || '',
-          token: token
-        }
-      });
-      
-      setSuccessMessage(`Certificate issued for ${userData.username}!`);
-    } catch (error) {
-      console.error('Error getting certificate:', error);
-      setErrorMessage(`Error: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
+    window.location.href = `${process.env.GITCERT_SERVER_URL || 'http://localhost:3002'}`;
   };
   
   // Function to create a new bounty
-  const handleCreateBounty = async (e) => {
+  const handleCreateBounty = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setErrorMessage('');
@@ -179,7 +145,6 @@ const App = () => {
         headers: {
           'Content-Type': 'application/json'
         },
-        credentials: 'include',
         body: JSON.stringify({
           issueId,
           repoOwner,
@@ -211,7 +176,7 @@ const App = () => {
       setDeadline(30);
     } catch (error) {
       console.error('Error creating bounty:', error);
-      setErrorMessage(`Error: ${error.message}`);
+      setErrorMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsLoading(false);
     }
@@ -288,7 +253,7 @@ const App = () => {
       setBounties(bountyDetails);
     } catch (error) {
       console.error('Error fetching bounties:', error);
-      setErrorMessage(`Error: ${error.message}`);
+      setErrorMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
       
       // Last resort fallback to standard fetch if everything else fails
       try {
@@ -315,7 +280,7 @@ const App = () => {
   }, [view]);
   
   // Function to claim a bounty
-  const handleClaimBounty = async (txid, outputIndex) => {
+  const handleClaimBounty = async (txid: String, outputIndex: Number) => {
     setIsLoading(true);
     setErrorMessage('');
     setSuccessMessage('');
@@ -338,7 +303,6 @@ const App = () => {
         headers: {
           'Content-Type': 'application/json'
         },
-        credentials: 'include',
         body: JSON.stringify({
           prId
         })
@@ -362,7 +326,7 @@ const App = () => {
       fetchBounties();
     } catch (error) {
       console.error('Error claiming bounty:', error);
-      setErrorMessage(`Error: ${error.message}`);
+      setErrorMessage(`Error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsLoading(false);
     }
@@ -464,13 +428,13 @@ const App = () => {
                 <div className="mb-8">
                   <div className="flex items-center mb-6">
                     <img
-                      src={userData.avatarUrl || "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"}
+                      src={userData?.avatarUrl || "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"}
                       alt="Profile"
                       className="w-16 h-16 rounded-full mr-4"
                     />
                     <div>
-                      <h3 className="text-xl font-semibold">Welcome, {userData.displayName || userData.username}!</h3>
-                      <p className="text-gray-600">@{userData.username}</p>
+                      <h3 className="text-xl font-semibold">Welcome, {userData?.displayName || userData?.username}!</h3>
+                      <p className="text-gray-600">@{userData?.username || 'username'}</p>
                     </div>
                   </div>
                   
@@ -688,7 +652,7 @@ const App = () => {
                             </a>
                           </td>
                           <td className="py-4 px-4 border-b text-right font-mono">
-                            {bounty.amount.toLocaleString()} sats
+                            {bounty.amount?.toLocaleString()} sats
                           </td>
                           <td className="py-4 px-4 border-b text-center">
                             {new Date(bounty.deadline).toLocaleDateString()}
